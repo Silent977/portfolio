@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // Encoded credentials (base64)
 // username: admin | password: password123
@@ -25,6 +25,73 @@ interface Project {
   screenshotUrl?: string;
 }
 
+const PROJECTS_STORAGE_KEY = 'portfolio-projects';
+
+const defaultProjects: Project[] = [
+  {
+    id: '1',
+    name: 'Quality Assurance',
+    genre: 'Testing',
+    info: 'Automated testing framework',
+    link: 'https://example.com',
+    imageGradient: 'from-neutral-700 to-neutral-800',
+  },
+  {
+    id: '2',
+    name: 'Brand Identity',
+    genre: 'Design',
+    info: 'UI/UX design',
+    link: 'https://example.com',
+    imageGradient: 'from-neutral-600 to-neutral-800',
+  },
+  {
+    id: '3',
+    name: 'AI Generator',
+    genre: 'AI',
+    info: 'Machine learning',
+    link: 'https://example.com',
+    imageGradient: 'from-neutral-800 to-neutral-900',
+  },
+  {
+    id: '4',
+    name: 'E-commerce',
+    genre: 'Design',
+    info: 'Experience redesign',
+    link: 'https://example.com',
+    imageGradient: 'from-neutral-500 to-neutral-700',
+  },
+  {
+    id: '5',
+    name: 'Testing Suite',
+    genre: 'Testing',
+    info: 'Load & stress tools',
+    link: 'https://example.com',
+    imageGradient: 'from-neutral-700 to-neutral-900',
+  },
+  {
+    id: '6',
+    name: 'Smart Dashboard',
+    genre: 'AI',
+    info: 'AI analytics',
+    link: 'https://example.com',
+    imageGradient: 'from-neutral-600 to-neutral-800',
+  },
+];
+
+const loadProjects = (): Project[] => {
+  try {
+    const savedProjects = localStorage.getItem(PROJECTS_STORAGE_KEY);
+    if (!savedProjects) {
+      return defaultProjects;
+    }
+
+    const parsedProjects = JSON.parse(savedProjects);
+    return Array.isArray(parsedProjects) ? parsedProjects : defaultProjects;
+  } catch {
+    return defaultProjects;
+  }
+};
+
 export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState('');
@@ -42,57 +109,11 @@ export default function App() {
   const validUsername = decodeCredential(ENCODED_USERNAME);
   const validPassword = decodeCredential(ENCODED_PASSWORD);
 
-  // Initialize projects with screenshot URLs
-  const [projects, setProjects] = useState<Project[]>([
-    {
-      id: '1',
-      name: 'Quality Assurance',
-      genre: 'Testing',
-      info: 'Automated testing framework',
-      link: 'https://example.com',
-      imageGradient: 'from-neutral-700 to-neutral-800',
-    },
-    {
-      id: '2',
-      name: 'Brand Identity',
-      genre: 'Design',
-      info: 'UI/UX design',
-      link: 'https://example.com',
-      imageGradient: 'from-neutral-600 to-neutral-800',
-    },
-    {
-      id: '3',
-      name: 'AI Generator',
-      genre: 'AI',
-      info: 'Machine learning',
-      link: 'https://example.com',
-      imageGradient: 'from-neutral-800 to-neutral-900',
-    },
-    {
-      id: '4',
-      name: 'E-commerce',
-      genre: 'Design',
-      info: 'Experience redesign',
-      link: 'https://example.com',
-      imageGradient: 'from-neutral-500 to-neutral-700',
-    },
-    {
-      id: '5',
-      name: 'Testing Suite',
-      genre: 'Testing',
-      info: 'Load & stress tools',
-      link: 'https://example.com',
-      imageGradient: 'from-neutral-700 to-neutral-900',
-    },
-    {
-      id: '6',
-      name: 'Smart Dashboard',
-      genre: 'AI',
-      info: 'AI analytics',
-      link: 'https://example.com',
-      imageGradient: 'from-neutral-600 to-neutral-800',
-    },
-  ]);
+  const [projects, setProjects] = useState<Project[]>(loadProjects);
+
+  useEffect(() => {
+    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+  }, [projects]);
 
   // Get screenshot URL from the project link
   const getScreenshotUrl = (url: string): string => {
