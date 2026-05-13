@@ -25,8 +25,6 @@ interface Project {
   screenshotUrl?: string;
 }
 
-const PROJECTS_STORAGE_KEY = 'portfolio-projects';
-
 const defaultProjects: Project[] = [
   {
     id: '1',
@@ -78,18 +76,18 @@ const defaultProjects: Project[] = [
   },
 ];
 
-const loadProjects = (): Project[] => {
-  try {
-    const savedProjects = localStorage.getItem(PROJECTS_STORAGE_KEY);
-    if (!savedProjects) {
-      return defaultProjects;
-    }
+// Get screenshot URL from the project link
+const getScreenshotUrl = (url: string): string => {
+  const encodedUrl = encodeURIComponent(url);
+  return `https://api.microlink.io/?url=${encodedUrl}&screenshot=true&meta=false&embed=screenshot.url`;
+};
 
-    const parsedProjects = JSON.parse(savedProjects);
-    return Array.isArray(parsedProjects) ? parsedProjects : defaultProjects;
-  } catch {
-    return defaultProjects;
+// Generate screenshot URL for projects with links
+const addScreenshotUrlToProject = (project: Project): Project => {
+  if (project.link) {
+    return { ...project, screenshotUrl: getScreenshotUrl(project.link) };
   }
+  return project;
 };
 
 export default function App() {
@@ -105,28 +103,68 @@ export default function App() {
   const [projectGenre, setProjectGenre] = useState('');
   const [projectInfo, setProjectInfo] = useState('');
   const [projectLink, setProjectLink] = useState('');
+  const [projectError, setProjectError] = useState('');
 
   const validUsername = decodeCredential(ENCODED_USERNAME);
   const validPassword = decodeCredential(ENCODED_PASSWORD);
 
-  const [projects, setProjects] = useState<Project[]>(loadProjects);
+  const [projects, setProjects] = useState<Project[]>(defaultProjects.map(addScreenshotUrlToProject));
 
   useEffect(() => {
-    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
-  }, [projects]);
+    let isMounted = true;
 
-  // Get screenshot URL from the project link
-  const getScreenshotUrl = (url: string): string => {
-    const encodedUrl = encodeURIComponent(url);
-    return `https://api.microlink.io/?url=${encodedUrl}&screenshot=true&meta=false&embed=screenshot.url`;
+    const fetchProjects = async () => {
+      try {
+        const response = await fetch('/api/projects');
+        if (!response.ok) {
+          throw new Error('Unable to load projects');
+        }
+
+        const savedProjects = await response.json();
+        if (isMounted && Array.isArray(savedProjects)) {
+          setProjects(savedProjects.map(addScreenshotUrlToProject));
+          setProjectError('');
+        }
+      } catch {
+        if (isMounted) {
+          setProjectError('Projects are showing demo data because Supabase is not connected yet.');
+        }
+      }
+    };
+
+    fetchProjects();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const getAdminHeaders = () => ({
+    'Content-Type': 'application/json',
+    'x-admin-username': validUsername,
+    'x-admin-password': validPassword,
+  });
+
+  const resetProjectForm = () => {
+    setProjectName('');
+    setProjectGenre('');
+    setProjectInfo('');
+    setProjectLink('');
   };
 
-  // Generate screenshot URL for new projects
-  const addScreenshotUrlToProject = (project: Project): Project => {
-    if (project.link) {
-      return { ...project, screenshotUrl: getScreenshotUrl(project.link) };
+  const saveProjectRequest = async (method: 'POST' | 'PUT' | 'DELETE', body: Record<string, string>) => {
+    const response = await fetch('/api/projects', {
+      method,
+      headers: getAdminHeaders(),
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || 'Unable to save project');
     }
-    return project;
+
+    return response.json();
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -147,11 +185,10 @@ export default function App() {
     setIsLoggedIn(false);
   };
 
-  const handleAddProject = (e: React.FormEvent) => {
+  const handleAddProject = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const newProject: Project = {
-      id: Date.now().toString(),
+    const newProject = {
       name: projectName,
       genre: projectGenre,
       info: projectInfo,
@@ -159,52 +196,60 @@ export default function App() {
       imageGradient: 'from-neutral-700 to-neutral-800',
     };
 
-    // Add screenshot URL if link exists
-    const projectWithScreenshot = addScreenshotUrlToProject(newProject);
-    setProjects([...projects, projectWithScreenshot]);
-    alert('Project added successfully!');
-    
-    setShowAddProject(false);
-    setProjectName('');
-    setProjectGenre('');
-    setProjectInfo('');
-    setProjectLink('');
+    try {
+      const savedProject = await saveProjectRequest('POST', newProject);
+      setProjects([...projects, addScreenshotUrlToProject(savedProject)]);
+      setProjectError('');
+      alert('Project added successfully!');
+      
+      setShowAddProject(false);
+      resetProjectForm();
+    } catch {
+      setProjectError('Project could not be added. Check your Supabase environment variables.');
+      alert('Project could not be added. Check your Supabase environment variables.');
+    }
   };
 
-  const handleEditProject = (e: React.FormEvent) => {
+  const handleEditProject = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (editingProject) {
-      const updatedProjects = projects.map(p => {
-        if (p.id === editingProject.id) {
-          const updated: Project = { 
-            ...p, 
-            name: projectName, 
-            genre: projectGenre, 
-            info: projectInfo, 
-            link: projectLink 
-          };
-          // Update screenshot URL if link changed
-          return addScreenshotUrlToProject(updated);
-        }
-        return p;
-      });
-      setProjects(updatedProjects);
-      alert('Project updated successfully!');
+      try {
+        const savedProject = await saveProjectRequest('PUT', {
+          id: editingProject.id,
+          name: projectName,
+          genre: projectGenre,
+          info: projectInfo,
+          link: projectLink,
+          imageGradient: editingProject.imageGradient,
+        });
+
+        const updatedProject = addScreenshotUrlToProject(savedProject);
+        setProjects(projects.map(p => (p.id === editingProject.id ? updatedProject : p)));
+        setProjectError('');
+        alert('Project updated successfully!');
+        
+        setShowEditProject(false);
+        setEditingProject(null);
+        resetProjectForm();
+      } catch {
+        setProjectError('Project could not be updated. Check your Supabase environment variables.');
+        alert('Project could not be updated. Check your Supabase environment variables.');
+      }
     }
-    
-    setShowEditProject(false);
-    setEditingProject(null);
-    setProjectName('');
-    setProjectGenre('');
-    setProjectInfo('');
-    setProjectLink('');
   };
 
-  const handleDeleteProject = (id: string) => {
+  const handleDeleteProject = async (id: string) => {
     if (confirm('Are you sure you want to delete this project?')) {
-      setProjects(projects.filter(p => p.id !== id));
-      alert('Project deleted successfully!');
+      try {
+        await saveProjectRequest('DELETE', { id });
+        setProjects(projects.filter(p => p.id !== id));
+        setProjectError('');
+        alert('Project deleted successfully!');
+      } catch {
+        setProjectError('Project could not be deleted. Check your Supabase environment variables.');
+        alert('Project could not be deleted. Check your Supabase environment variables.');
+      }
     }
   };
 
@@ -571,6 +616,12 @@ export default function App() {
               <h3 className="text-xs md:text-sm tracking-widest text-neutral-400">MY PROJECTS</h3>
               <div className="flex-grow h-px bg-neutral-700"></div>
             </div>
+
+            {isLoggedIn && projectError && (
+              <div className="mb-6 rounded-lg border border-yellow-700 bg-yellow-900/20 px-4 py-3 text-sm text-yellow-300">
+                {projectError}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               {projects.map((project) => (

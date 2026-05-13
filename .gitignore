@@ -2,3 +2,5 @@ node_modules/
 dist/
 .codex
 .codex/
+.env
+.env.local
